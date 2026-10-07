@@ -1,0 +1,90 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build ESP32 (Arduino IDE)",
+            "type": "shell",
+            "command": "arduino-cli",
+            "args": [
+                "compile",
+                "--fqbn",
+                "esp32:esp32:esp32",
+                "-e",
+                "${workspaceFolder}/BinbotDashboard/BinbotESP32_Firmware.ino"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": "absolute",
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s*(error|warning):\\s*(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            }
+        },
+        {
+            "label": "Upload ESP32 Firmware",
+            "type": "shell",
+            "command": "arduino-cli",
+            "args": [
+                "upload",
+                "-p",
+                "COM3",
+                "--fqbn",
+                "esp32:esp32:esp32",
+                "${workspaceFolder}/BinbotDashboard/BinbotESP32_Firmware.ino"
+            ],
+            "dependsOn": [
+                "Build ESP32 (Arduino IDE)"
+            ],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Monitor ESP32 Serial",
+            "type": "shell",
+            "command": "arduino-cli",
+            "args": [
+                "monitor",
+                "-p",
+                "COM3",
+                "-c",
+                "baudrate=115200"
+            ]
+        },
+        {
+            "label": "Start AI Server",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/binbot_ai_server.py"
+            ],
+            "isBackground": false,
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": false
+            }
+        },
+        {
+            "label": "Test System",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/test_system.py"
+            ]
+        }
+    ]
+}

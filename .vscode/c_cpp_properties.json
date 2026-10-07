@@ -1,0 +1,33 @@
+{
+    "configurations": [
+        {
+            "name": "ESP32",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${env:LOCALAPPDATA}/Arduino15/packages/esp32/hardware/esp32/*/cores/esp32",
+                "${env:LOCALAPPDATA}/Arduino15/packages/esp32/hardware/esp32/*/variants/esp32",
+                "${env:LOCALAPPDATA}/Arduino15/packages/esp32/hardware/esp32/*/tools/sdk/esp32/include",
+                "${env:LOCALAPPDATA}/Arduino15/packages/esp32/hardware/esp32/*/libraries/WiFi/src",
+                "${env:LOCALAPPDATA}/Arduino15/packages/esp32/hardware/esp32/*/libraries/*/src"
+            ],
+            "defines": [
+                "__ESP32__",
+                "ESP_PLATFORM",
+                "IDF_TARGET_ESP32",
+                "CORE_DEBUG_LEVEL=0",
+                "ARDUINO_RUNNING_CORE=1"
+            ],
+            "cStandard": "c11",
+            "cppStandard": "c++11",
+            "intelliSenseMode": "gcc-x64",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "${env:LOCALAPPDATA}/Arduino15/packages/esp32/hardware/esp32/*/cores/esp32"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
+        }
+    ],
+    "version": 4
+}
