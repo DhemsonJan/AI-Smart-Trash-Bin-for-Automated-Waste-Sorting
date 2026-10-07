@@ -1,0 +1,20 @@
+{
+  "functions": {
+    "BinbotDashboard/api/*.php": {
+      "runtime": "vercel-php@0.9.0"
+    },
+    "BinbotDashboard/*.php": {
+      "runtime": "vercel-php@0.9.0"
+    },
+    "BinbotAdmin/*.php": {
+      "runtime": "vercel-php@0.9.0"
+    }
+  },
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/BinbotDashboard/Binbot.php",
+      "permanent": false
+    }
+  ]
+}

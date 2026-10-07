@@ -1,50 +1,51 @@
 <?php
 // ============================================================
 //  get-command.php
-//  ESP32-S3 polls this endpoint every ~1 second.
+//  ESP32-S3 polls this endpoint every ~1 second (optional — the
+//  firmware also reads binbot/command directly from Firebase).
 //  Returns any pending command, then marks it as executed.
 //  Method: GET
-//  URL: http://YOUR_PC_IP/BinbotDashboard/api/get-command.php
 //
-//  UPDATED v2.3.0:
+//  Source: Firebase RTDB binbot/command — same pending-flag flow
+//  the firmware implements (it clears by writing pending=false).
+//
+//  UPDATED:
 //  - Added 'source' field → 'manual' or 'auto'
-//    manual = dashboard button → hold open until explicit close
-//    auto   = programmatic     → open 0.5s, hold 5s, auto-close
 //  - Added field validation before returning command
 //  - Safe fallback: missing 'source' defaults to 'manual'
 // ============================================================
+
+require __DIR__ . '/firebase.php';
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Cache-Control: no-cache, no-store, must-revalidate');
 
-$cmdFile = __DIR__ . '/pending_command.json';
+$cmd = fb_get('binbot/command');
 
-// ── No pending command file ───────────────────────────────────
-if (!file_exists($cmdFile)) {
-    echo json_encode(['success' => true, 'has_command' => false]);
-    exit;
-}
-
-$raw = file_get_contents($cmdFile);
-$cmd = json_decode($raw, true);
-
-// ── File is empty, malformed, or already executed ─────────────
-if (!$cmd || ($cmd['executed'] ?? false) === true) {
+// ── No command, or already picked up ──────────────────────────
+if (!is_array($cmd) || ($cmd['pending'] ?? false) !== true) {
     echo json_encode(['success' => true, 'has_command' => false]);
     exit;
 }
 
 // ── Commands expire after 10 seconds ──────────────────────────
 //    Prevents stale commands firing if ESP32 was offline
-if ((time() - ($cmd['unix_time'] ?? 0)) > 10) {
+$createdUnix = is_numeric($cmd['unix_time'] ?? null)
+    ? (int) $cmd['unix_time']
+    : (is_numeric($cmd['created_at'] ?? null)
+        ? (int) floor($cmd['created_at'] / 1000)
+        : 0);
+
+if ($createdUnix > 0 && (time() - $createdUnix) > 10) {
+    $cmd['pending']  = false;
     $cmd['executed'] = true;
     $cmd['expired']  = true;
-    file_put_contents($cmdFile, json_encode($cmd, JSON_PRETTY_PRINT));
+    fb_put('binbot/command', $cmd);
     echo json_encode([
         'success'     => true,
         'has_command' => false,
-        'note'        => 'Command expired'
+        'note'        => 'Command expired',
     ]);
     exit;
 }
@@ -59,25 +60,27 @@ $compartment = $cmd['compartment'] ?? '';
 $source      = $cmd['source']      ?? 'manual'; // default to manual if not set by sender
 
 if (!in_array($action, $validActions)) {
+    $cmd['pending']  = false;
     $cmd['executed'] = true;
     $cmd['error']    = 'Invalid action: ' . $action;
-    file_put_contents($cmdFile, json_encode($cmd, JSON_PRETTY_PRINT));
+    fb_put('binbot/command', $cmd);
     echo json_encode([
         'success'     => false,
         'has_command' => false,
-        'error'       => 'Invalid action'
+        'error'       => 'Invalid action',
     ]);
     exit;
 }
 
 if ($action !== 'set_threshold' && !in_array($compartment, $validCompartments)) {
+    $cmd['pending']  = false;
     $cmd['executed'] = true;
     $cmd['error']    = 'Invalid compartment: ' . $compartment;
-    file_put_contents($cmdFile, json_encode($cmd, JSON_PRETTY_PRINT));
+    fb_put('binbot/command', $cmd);
     echo json_encode([
         'success'     => false,
         'has_command' => false,
-        'error'       => 'Invalid compartment'
+        'error'       => 'Invalid compartment',
     ]);
     exit;
 }
@@ -92,17 +95,18 @@ echo json_encode([
     'success'     => true,
     'has_command' => true,
     'command'     => [
-        'id'          => $cmd['id']    ?? null,
+        'id'          => $cmd['id']       ?? null,
         'action'      => $action,
         'compartment' => $compartment,
-        'source'      => $source,       // 'manual' → hold open until close command
-                                        // 'auto'   → open 0.5s, hold 5s, auto-close
-        'value'       => $cmd['value'] ?? null,  // for set_threshold only
+        'source'      => $source,        // 'manual' → hold open until explicit close
+                                         // 'auto'   → open 0.5s, hold 5s, auto-close
+        'value'       => $cmd['value']   ?? null,  // for set_threshold only
     ],
 ]);
 
 // ── Mark as executed so it's only sent once ───────────────────
+$cmd['pending']     = false;
 $cmd['executed']    = true;
 $cmd['executed_at'] = date('Y-m-d H:i:s');
-file_put_contents($cmdFile, json_encode($cmd, JSON_PRETTY_PRINT));
+fb_put('binbot/command', $cmd);
 ?>

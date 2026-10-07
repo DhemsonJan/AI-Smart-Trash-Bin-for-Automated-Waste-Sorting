@@ -1,17 +1,23 @@
 <?php
 // ============================================================
 //  send-command.php
-//  Dashboard JS POSTs a command here (open/close lid, threshold)
-//  ESP32-S3 polls get-command.php to pick it up
+//  Dashboard/Admin JS POSTs a command here (open/close lid, threshold)
+//  ESP32-S3 polls binbot/command in Firebase to pick it up
 //  Your JS already calls:  CONFIG.API_BASE + 'send-command.php'
 //
-//  UPDATED v2.3.0:
+//  UPDATED for Vercel:
+//  - Writes to Firebase RTDB binbot/command (same node the
+//    dashboard's sendCommandToESP32() writes and the ESP32 reads)
+//  - Same validation + pending-command protection as before
+//
 //  - Added 'source' field support → 'manual' (default) or 'auto'
 //    manual = dashboard button → ESP32 holds open until close command
 //    auto   = programmatic     → ESP32 does open + 5s standby + auto-close
 //  - Compartment validation (only 'bio' or 'nonbio' accepted)
 //  - Rejects requests while a command is still pending/unexecuted
 // ============================================================
+
+require __DIR__ . '/firebase.php';
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -41,9 +47,9 @@ $validActions      = ['open_lid', 'close_lid', 'set_threshold'];
 $validCompartments = ['bio', 'nonbio'];
 $validSources      = ['manual', 'auto'];
 
-$action      = $body['action']      ?? '';
-$compartment = $body['compartment'] ?? '';
-$source      = $body['source']      ?? 'manual'; // default to manual if JS doesn't send it
+$action      = $body['action']       ?? '';
+$compartment = $body['compartment']  ?? '';
+$source      = $body['source']       ?? 'manual'; // default to manual if JS doesn't send it
 
 if (!in_array($action, $validActions)) {
     echo json_encode(['success' => false, 'message' => 'Unknown action: ' . $action]);
@@ -62,26 +68,30 @@ if (!in_array($source, $validSources)) {
 }
 
 // ── Prevent overwriting a command the ESP32 hasn't picked up yet ──
-$cmdFile = __DIR__ . '/pending_command.json';
+$existing = fb_get('binbot/command');
 
-if (file_exists($cmdFile)) {
-    $existing = json_decode(file_get_contents($cmdFile), true);
-    if ($existing && ($existing['executed'] ?? false) === false) {
-        $age = time() - ($existing['unix_time'] ?? 0);
-        if ($age <= 10) {
-            // Still within the 10s window — previous command not yet picked up
-            echo json_encode([
-                'success' => false,
-                'message' => 'A command is already pending. Wait for ESP32 to pick it up (within 1s).',
-                'pending_command_id' => $existing['id'] ?? null,
-            ]);
-            exit;
-        }
-        // Older than 10s — safe to overwrite (ESP32 was offline, command stale)
+if (is_array($existing) && ($existing['pending'] ?? false) === true) {
+    // Age: prefer unix_time (seconds), fall back to created_at (ms)
+    $createdUnix = is_numeric($existing['unix_time'] ?? null)
+        ? (int) $existing['unix_time']
+        : (is_numeric($existing['created_at'] ?? null)
+            ? (int) floor($existing['created_at'] / 1000)
+            : 0);
+    $age = $createdUnix > 0 ? time() - $createdUnix : 9999;
+
+    if ($age <= 10) {
+        // Still within the 10s window — previous command not yet picked up
+        echo json_encode([
+            'success'            => false,
+            'message'            => 'A command is already pending. Wait for ESP32 to pick it up (within 1s).',
+            'pending_command_id' => $existing['id'] ?? null,
+        ]);
+        exit;
     }
+    // Older than 10s — safe to overwrite (ESP32 was offline, command stale)
 }
 
-// ── Build command record ──────────────────────────────────────
+// ── Build command record (same shape Binbot.js writes) ────────
 $command = [
     'id'          => uniqid('cmd_', true),
     'action'      => $action,
@@ -89,13 +99,20 @@ $command = [
     'source'      => $source,        // 'manual' → ESP32 holds open until close command
                                      // 'auto'   → ESP32 opens, waits 5s, auto-closes
     'value'       => $body['value'] ?? null,  // for set_threshold only
-    'created_at'  => date('Y-m-d H:i:s'),
+    'pending'     => true,
+    'created_at'  => (int) round(microtime(true) * 1000), // ms, same as Date.now() in JS
     'unix_time'   => time(),
-    'executed'    => false,
 ];
 
-// ── Write to command queue (one pending command at a time) ────
-file_put_contents($cmdFile, json_encode($command, JSON_PRETTY_PRINT));
+// ── Write to Firebase command queue (one pending at a time) ───
+if (!fb_put('binbot/command', $command)) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Failed to queue command — Firebase unreachable'
+                     . (isset($GLOBALS['fb_last_error']) ? ' (' . $GLOBALS['fb_last_error'] . ')' : ''),
+    ]);
+    exit;
+}
 
 echo json_encode([
     'success'    => true,
