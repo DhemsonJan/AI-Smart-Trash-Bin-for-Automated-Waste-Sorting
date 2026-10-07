@@ -36,7 +36,7 @@ function fb_http($url, $method = 'GET', $body = null) {
     $resp   = curl_exec($ch);
     $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     $err    = curl_error($ch);
-    curl_close($ch);
+    // curl_close() intentionally omitted — deprecated no-op since PHP 8.0
 
     if ($resp === false) {
         return ['ok' => false, 'status' => 0, 'body' => null, 'error' => $err];
